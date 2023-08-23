@@ -10,27 +10,26 @@ const term = new XTerm();
 term.fitAddon = new FitAddon()
 term.loadAddon(term.fitAddon)
 
-term.prompt = () => {
-  term.write('\n\r>>> ')
-}
+term.prompt=()=>{term.write('\n\r>>> ')}
+term.error=(msg)=>{term.write(`\r\n\x1b[31m${msg.slice(299,-1)}\x1b[m`);term.prompt()}
+const echo=(msg,prompt=true)=>{term.write(msg);if(prompt){term.prompt()}}
 export default function Terminal(){
   const termRef = useRef(null);
   useEffect(() => {
-
     // Attach the term to the DOM
     term.open(termRef.current);
-
+    // eslint-disable-next-line
     let pyodideReady = false;
 
     // Load Pyodide
+    // eslint-disable-next-line
     const pyodide = (async function() {
       const pyodide = await loadPyodide({
         indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.23.4/full/',
-        stdout: (msg) => {
-          term.write(msg)
-          term.prompt()
-        }
+        stdout: echo,
+        stderr: term.error
       }).then(function(p){window.pyodide=p;return p});
+      // eslint-disable-next-line
       var pyodideReady = true;
       return pyodide
     })()
@@ -40,7 +39,6 @@ export default function Terminal(){
       if (ev.key === '\r' || ev.key === '\n') {
         execpy(term.curr_line)
         term.curr_line=''
-        term.prompt()
       } else if (ev.key === '\x7f') {
         if (term.curr_line !== '') {term.write('\b \b')}
         term.curr_line=term.curr_line.slice(0,-1)
@@ -51,12 +49,9 @@ export default function Terminal(){
     })
     // Execute Python code using Pyodide
     const execpy = (code) => {
-      window.pyodide.runPythonAsync(code).then((result) => {
-        console.log(result)
-        term.write(result);
-      }).catch(error => {
-        console.log(error)
-        term.write(`\n${error.message}`);
+      window.pyodide.runPythonAsync(code).then((result) => {}).catch(error => {
+        console.log(error.message);
+        term.error(error.message);
       })
     };
 
@@ -68,7 +63,7 @@ export default function Terminal(){
     return () => {
       term.dispose();
     };
-  }, []);
+  })
 
   return <div id="terminal" ref={termRef} />;
 };
