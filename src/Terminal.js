@@ -115,7 +115,7 @@ export default function Terminal(){
         } finally {
           fut.destroy();
           wrapped.destroy();
-        }
+        } 
       }
       await sleep(10);
     }
