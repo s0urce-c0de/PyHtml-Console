@@ -1,134 +1,203 @@
 import React, { useEffect, useRef } from 'react';
+import { FitAddon } from 'xterm-addon-fit';
 import { Terminal as XTerm } from 'xterm';
-import { FitAddon } from 'xterm-addon-fit'
-import 'xterm/css/xterm.css';
-import './Terminal.css'
-import { loadPyodide } from 'pyodide';
-
-
-const term = new XTerm();
-term.fitAddon = new FitAddon()
-term.loadAddon(term.fitAddon)
-
-term.prompt=()=>{term.write('\n\r>>> ')}
-term.error=(msg)=>{term.write(`\r\n\x1b[31m${msg.slice(301,-1)}\x1b[m`);term.prompt()}
-const echo=(msg,prompt=true)=>{term.write(msg);if(prompt){term.prompt()}}
-function sleep(n){return new Promise(e=>setTimeout(e,n))}
-export default function Terminal(){
+import { version as pyodide_version, loadPyodide } from 'pyodide';
+import 'xterm/css/xterm.css'
+const Terminal = () => {
   const termRef = useRef(null);
+  const fitAddon = useRef(new FitAddon());
+  const termHistory = useRef(['']);
+  const currentHistoryLine = useRef(0);
+  const currentLine = useRef('');
+  const curCode = useRef('');
+  const multiLine = useRef(false);
+  const ready = useRef(false);
+  const typeListening = useRef(true);
+  const pyodide = (async function(){await loadPyodide({indexURL : `https://cdn.jsdelivr.net/pyodide/v${pyodide_version}/full/`});})().then(function(python){window.pyodide=python;return window.pyodide})
+  const pressed = {}
+  // Event listener for keydown event
+  document.addEventListener('keydown',e=>pressed[e.key]=true);
+
+  // Event listener for keyup event
+  document.addEventListener('keyup',e=>pressed[e.key]=false);
+
   useEffect(() => {
-    // Attach the term to the DOM
+    const term = new XTerm({ allowProposedApi: true });
+    term.loadAddon(fitAddon.current);
     term.open(termRef.current);
-    // eslint-disable-next-line
-    let pyodideReady = false;
-    // Load Pyodide
-    // eslint-disable-next-line
-    !async function(){return await loadPyodide({indexURL:"https://cdn.jsdelivr.net/pyodide/v0.23.4/full/",stdout:echo,stderr:term.error})
-    .then(function(d){return window.pyodide=d})}();const pyodide=window.pyodide;
-    term.curr_line='';
-    // Send term input to Pyodide for execution
-    term.onKey(function(ev) {
-      if (ev.key === '\r' || ev.key === '\n') {
-        interpreter(term.curr_line)
-      } else if (ev.key === '\x7f') {
-        if (term.curr_line !== '') {term.write('\b \b')}
-        term.curr_line=term.curr_line.slice(0,-1)
-      } else {
-        term.curr_line += ev.key
-        term.write(ev.key)
-      }
-    })
-
-    let namespace = window.pyodide.globals.get("dict")();
-    //let locals=new Map()
-    pyodide.runPython(
-      `
-        import sys
-        from pyodide.ffi import to_js
-        from pyodide.console import PyodideConsole, repr_shorten, BANNER
-        import __main__
-        BANNER = "Welcome to the Pyodide terminal emulator 🐍\\n" + BANNER
-        pyconsole = PyodideConsole(__main__.__dict__)
-        import builtins
-        sys.ps1 = ">>> "
-        sys.ps2 = "... "
-        async def await_fut(fut):
-          res = await fut
-          if res is not None:
-            builtins._ = res
-          return to_js([res], depth=1)
-        def clear_console():
-          pyconsole.buffer = []
-    `,
-      { globals: namespace, /*locals: locals*/},
-    );
-    let repr_shorten = namespace.get("repr_shorten");
-    let banner = namespace.get("BANNER");
-    let await_fut = namespace.get("await_fut");
-    let pyconsole = namespace.get("pyconsole");
-    let clear_console = namespace.get("clear_console");
-    let ps1 = namespace.get('sys.ps1'),ps2 = namespace.get('sys.ps2');
-    namespace.destroy();
-
-    async function interpreter(command) {
-      // multiline should be split (useful when pasting)
-      for (const c of command.split("\n")) {
-        const escaped = c.replaceAll(/\u00a0/g, " ");
-        let fut = pyconsole.push(escaped);
-        switch (fut.syntax_check) {
-          case "syntax-error":
-            term.error(fut.formatted_error.trimEnd());
-            continue;
-          case "incomplete":
-            term.prompt = ()=>{term.write("\n\r... ")};
-          case "complete":
-            term.prompt = ()=>{term.write("\n\r>>> ")};
-            break;
-          default:
-            throw new Error(`Unexpected type ${fut.syntax_check}`);
+    fitAddon.current.fit();
+    window.onresize = () => fitAddon.current.fit();
+    term.onKey(async (e) => {
+      if (!typeListening.current) return;
+      if (e.domEvent.key === 'Backspace') {
+        if (term.buffer.active.cursorX > 4) {
+          if (currentHistoryLine.current !== 0) {
+            termHistory.current[0] = currentLine.current;
+          }
+          currentLine.current = currentLine.current.substring(0, currentLine.current.length - 1);
+          termHistory.current[0] = currentLine.current;
+          term.write('\x1b[D \x1b[D');
         }
-        // In JavaScript, await automatically also awaits any results of
-        // awaits, so if an async function returns a future, it will await
-        // the inner future too. This is not what we want so we
-        // temporarily put it into a list to protect it.
-        let wrapped = await_fut(fut);
-        // complete case, get result / error and print it.
-        try {
-          let [value] = await wrapped;
-          if (value !== undefined) {
-            echo(
-              repr_shorten.callKwargs(value, {
-                separator: "\n<long output truncated>\n",
-              }),
-            );
-          }
-          if (value instanceof pyodide.ffi.PyProxy) {
-            value.destroy();
-          }
-        } catch (e) {
-          if (e.constructor.name === "PythonError") {
-            const message = fut.formatted_error || e.message;
-            term.error(message.trimEnd());
-          } else {
-            throw e;
-          }
-        } finally {
-          fut.destroy();
-          wrapped.destroy();
-        } 
+        return 0;
       }
-      await sleep(10);
-    }
+      if (e.key === '\r') {
+        if (termHistory.current[0] !== currentLine.current) {
+          termHistory.current[0] = currentLine.current;
+        }
+        curCode.current += currentLine.current;
+        currentLine.current = '';
+        currentHistoryLine.current = 0;
+        termHistory.current.unshift('');
+        if (!isDown('Shift') || willBreakeLine()) {
+          multiLine.current = true;
+          curCode.current += '\n';
+          term.write('\n\r... ');
+        } else {
+          if (multiLine.current) {
+            if (curCode.current[curCode.current.length - 1] !== '\n') {
+              return 0;
+            }
+            multiLine.current = false;
+          }
+          term.write('\r\n');
+          if (curCode.current.length === 0) {
+            term.write('>>> ');
+            return 0;
+          }
+          typeListening.current = false;
+          await pyodide.runPythonAsync(curCode.current)
+            .then((result) => {
+              if (typeof result === 'string') {
+                write(`'${result.replace(/\n/g, '\\n')}'`);
+              } else {
+                write(result);
+              }
+            })
+            .catch((error) => {
+              write(error);
+            })
+            .then(() => {
+              typeListening.current = true;
+              curCode.current = '';
+              term.write('\r\n>>> ');
+            });
+        }
+        return 0;
+      }
+      if (e.domEvent.key === 'ArrowUp') {
+        if (currentHistoryLine.current > 0) {
+          currentHistoryLine.current--;
+          term.write('\x1b[5G\x1b[K');
+          term.write(termHistory.current[currentHistoryLine.current]);
+          currentLine.current = termHistory.current[currentHistoryLine.current];
+        }
+        return 0;
+      }
+      if (e.domEvent.key === 'Tab') {
+        term.write('    ');
+        currentLine.current += '    ';
+        termHistory.current[0] = currentLine.current;
+        return 0;
+      }
+      term.write(e.key);
+      currentLine.current += e.key;
+      termHistory.current[0] = currentLine.current;
+    });
 
-    term.fitAddon.fit()
-    term.writeln('Python React Terminal');
-    term.prompt();
+    const onResize = () => {
+      fitAddon.current.fit();
+    };
 
-    // Clean up resources on component unmount
+    term.onResize(onResize);
+
     return () => {
       term.dispose();
     };
-  })
+  });
 
-  return <div id="terminal" ref={termRef} />;
+  const write = (...args) => {
+    termRef.current.terminal.write(format(...args).replace(/\n/g, '\r\n'));
+  };
+
+  const writeln = (...args) => {
+    termRef.current.terminal.writeln(format(...args).replace(/\n/g, '\r\n'));
+  };
+
+  const isDown = (key) => {
+    return !!pressed[key];
+  };
+
+  const willBreakeLine = () => {
+    const lines = [];
+    let inQuotes = false;
+    let inComment = false;
+    let inLineComment = false;
+    for (let i = 0; i < curCode.current.length; i++) {
+      const char = curCode.current[i];
+      if (char === '"' && !inComment && !inLineComment) {
+        inQuotes = !inQuotes;
+      }
+      if (char === '/' && i < curCode.current.length - 1) {
+        if (curCode.current[i + 1] === '/') {
+          if (!inQuotes && !inComment) {
+            inLineComment = true;
+          }
+        } else if (curCode.current[i + 1] === '*') {
+          if (!inQuotes && !inComment && !inLineComment) {
+            inComment = true;
+          }
+        }
+      }
+      if (char === '\n' && !inQuotes && !inComment && !inLineComment) {
+        lines.push(i);
+      }
+      if (char === '*' && i < curCode.current.length - 1) {
+        if (curCode.current[i + 1] === '/') {
+          if (!inQuotes && !inLineComment) {
+            inComment = false;
+            i++;
+          }
+        }
+      }
+      if (char === '\r' && i < curCode.current.length - 1 && curCode.current[i + 1] === '\n') {
+        i++;
+      }
+    }
+    return lines.length === 0 || lines[lines.length - 1] !== curCode.current.length - 1;
+  };
+
+  const format = (str, ...args) => {
+    let formatted = str?.toString() || '';
+    if (args.length) {
+      formatted = formatted.replace(/(%?)(%([jds]))/g, (match, escaped, ptn, specifier) => {
+        const arg = args.shift();
+        switch (specifier) {
+          case 's':
+            return escaped ? match : `${arg}`;
+          case 'd':
+            return escaped ? match : Number(arg);
+          case 'j':
+            return escaped ? match : JSON.stringify(arg);
+          default:
+            return match;
+        }
+      });
+    }
+    if (args.length) {
+      formatted += ` ${args.join(' ')}`;
+    }
+    formatted = formatted.replace(/%{2,2}/g, '%');
+    return `${formatted}`;
+  };
+
+  const termStyle = {
+    width: '100%',
+    height: '100%',
+  };
+
+  return (
+    <div ref={termRef} style={termStyle}></div>
+  );
 };
+
+export default Terminal;
