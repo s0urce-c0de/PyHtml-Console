@@ -1,5 +1,5 @@
 import './App.css';
-import Terminal from "./NewTerminal"
+import Terminal from "./Terminal"
 
 function App() {
   return (
