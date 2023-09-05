@@ -13,7 +13,7 @@ const Terminal = () => {
   const multiLine = useRef(false);
   const ready = useRef(false);
   const typeListening = useRef(true);
-  const pyodide = (async function(){await loadPyodide({indexURL : `https://cdn.jsdelivr.net/pyodide/v${pyodide_version}/full/`});})().then(function(python){window.pyodide=python;return window.pyodide})
+  const pyodide = (async function(){await loadPyodide({indexURL : `https://cdn.jsdelivr.net/pyodide/v${pyodide_version}/full/`})})().then(function(python){window.pyodide=python;return window.pyodide})
   const pressed = {}
   // Event listener for keydown event
   document.addEventListener('keydown',e=>pressed[e.key]=true);
@@ -27,20 +27,21 @@ const Terminal = () => {
     term.open(termRef.current);
     fitAddon.current.fit();
     window.onresize = () => fitAddon.current.fit();
-    term.onKey(async (e) => {
+    term.onKey(async (event) => {
       if (!typeListening.current) return;
-      if (e.domEvent.key === 'Backspace') {
+      console.log(event)
+      if (event.key === '\x7f') {
         if (term.buffer.active.cursorX > 4) {
           if (currentHistoryLine.current !== 0) {
             termHistory.current[0] = currentLine.current;
           }
           currentLine.current = currentLine.current.substring(0, currentLine.current.length - 1);
           termHistory.current[0] = currentLine.current;
-          term.write('\x1b[D \x1b[D');
+          term.write('\b \b');
         }
         return 0;
       }
-      if (e.key === '\r') {
+      if (event.key === '\r') {
         if (termHistory.current[0] !== currentLine.current) {
           termHistory.current[0] = currentLine.current;
         }
@@ -48,7 +49,7 @@ const Terminal = () => {
         currentLine.current = '';
         currentHistoryLine.current = 0;
         termHistory.current.unshift('');
-        if (!isDown('Shift') || willBreakeLine()) {
+        if (!isDown('Shift') || willBreakLine()) {
           multiLine.current = true;
           curCode.current += '\n';
           term.write('\n\r... ');
@@ -84,7 +85,7 @@ const Terminal = () => {
         }
         return 0;
       }
-      if (e.domEvent.key === 'ArrowUp') {
+      if (event.key === '\x1b[A') {
         if (currentHistoryLine.current > 0) {
           currentHistoryLine.current--;
           term.write('\x1b[5G\x1b[K');
@@ -93,14 +94,14 @@ const Terminal = () => {
         }
         return 0;
       }
-      if (e.domEvent.key === 'Tab') {
-        term.write('    ');
-        currentLine.current += '    ';
+      if (event.key === '\t') {
+        term.write('  ');
+        currentLine.current += '  ';
         termHistory.current[0] = currentLine.current;
         return 0;
       }
-      term.write(e.key);
-      currentLine.current += e.key;
+      term.write(event.key);
+      currentLine.current += event.key;
       termHistory.current[0] = currentLine.current;
     });
 
@@ -127,7 +128,7 @@ const Terminal = () => {
     return !!pressed[key];
   };
 
-  const willBreakeLine = () => {
+  const willBreakLine = () => {
     const lines = [];
     let inQuotes = false;
     let inComment = false;
