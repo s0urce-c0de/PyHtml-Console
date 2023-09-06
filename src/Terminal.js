@@ -22,11 +22,13 @@ const Terminal = () => {
   document.addEventListener('keyup',e=>pressed[e.key]=false);
 
   useEffect(() => {
-    const term = new XTerm({ allowProposedApi: true });
+    const term = new XTerm({
+      allowProposedApi: true
+    });
     term.loadAddon(fitAddon.current);
     term.open(termRef.current);
     fitAddon.current.fit();
-    window.onresize = () => fitAddon.current.fit();
+    window.onresize=()=>fitAddon.current.fit();
     term.onKey(async (event) => {
       if (!typeListening.current) return;
       console.log(event)
@@ -35,7 +37,7 @@ const Terminal = () => {
           if (currentHistoryLine.current !== 0) {
             termHistory.current[0] = currentLine.current;
           }
-          currentLine.current = currentLine.current.substring(0, currentLine.current.length - 1);
+          currentLine.current = currentLine.current.slice(0, -1);
           termHistory.current[0] = currentLine.current;
           term.write('\b \b');
         }
@@ -52,7 +54,7 @@ const Terminal = () => {
         if (!isDown('Shift') || willBreakLine()) {
           multiLine.current = true;
           curCode.current += '\n';
-          term.write('\n\r... ');
+          term.write('\n\t... ');
         } else {
           if (multiLine.current) {
             if (curCode.current[curCode.current.length - 1] !== '\n') {
@@ -60,7 +62,7 @@ const Terminal = () => {
             }
             multiLine.current = false;
           }
-          term.write('\r\n');
+          term.write('\n\r');
           if (curCode.current.length === 0) {
             term.write('>>> ');
             return 0;
@@ -195,7 +197,6 @@ const Terminal = () => {
     width: '100%',
     height: '100%',
   };
-
   return (
     <div ref={termRef} style={termStyle}></div>
   );
