@@ -1,0 +1,47 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+     {
+        "type": "npm",
+        "script": "start",
+        "label": "Start react server.",
+        "group": {
+          "kind": "test",
+          "isDefault": true
+        },
+        "isBackground": true,   // This prevents the launch.json to wait for the completion of the task
+        "problemMatcher": {
+           "owner": "custom",   // This is not needed but, required by the problemMatcher Object
+           "pattern": {
+             "regexp": "^$"     // This is not needed but, required by the problemMatcher Object
+           },
+           "background": {
+             "activeOnStart": true,
+             "beginsPattern": "Compiling...",  // Signals the begin of the Task
+             "endsPattern": "Compiled .*"      // Signals that now the initialization of the task is complete
+           }
+        },
+        "runOptions": {
+          "runOn": "folderOpen"
+        },
+     },
+     {
+      "type": "npm",
+      "script": "run build",
+      "label": "Build the deployment edition.",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "type": "npm",
+      "script": "run deploy",
+      "label": "Deploy server to github.",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    }
+  ]
+}
