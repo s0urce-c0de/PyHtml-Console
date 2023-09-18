@@ -1,13 +1,18 @@
+<!doctype html>
 <html>
   <head>
-    <title>Python Console</title>
-    <link rel="manifest" href=".webmanifest">
-    <link rel="shortcut icon" href="favicon.svg">
-    <script src="https://cdn.jsdelivr.net/pyodide/dev/full/pyodide.js"></script>
-    <script type="module" src="https://cdn.skypack.dev/xterm"></script>
-    <script type="module" src="https://cdn.skypack.dev/xterm-addon-fit"></script>
-    <script type="module" src="script.js"></script>
-    <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/jquery"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery.terminal@latest/js/jquery.terminal.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery.terminal@latest/js/unix_formatting.min.js"></script>
+    <link
+      href="https://cdn.jsdelivr.net/npm/jquery.terminal@latest/css/jquery.terminal.min.css"
+      rel="stylesheet"
+    />
+    <link href="style.css" rel="stylesheet" />
   </head>
-  <body></body>
+  <body>
+    <div id="loading"></div>
+    <script src="script.js"></script>
+  </body>
 </html>

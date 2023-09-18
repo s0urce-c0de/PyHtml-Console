@@ -1,316 +1,158 @@
-
-import { FitAddon } from "https://cdn.skypack.dev/xterm-addon-fit";
-import xterm from "https://cdn.skypack.dev/xterm";
-
-const { Terminal } = xterm
-let pyodide
-const { log, warn } = console;
-let ready = false;
-let typeListening = true
-const term = new Terminal({
-  allowProposedApi: true
-});
-window.term = term;
-
-const termHistory = ['']
-let currentHistoryLine = 0
-let currentLine = ''
-
-const fitAddon = new FitAddon();
-term.loadAddon(fitAddon);
-const onResize = () =>{
-  fitAddon.fit();
-}
-term.open(document.body)
-onResize();
-window.onresize = onResize
-function format(fmt) {
-  var re = /(%?)(%([jds]))/g,
-  args = Array.prototype.slice.call(arguments, 1),
-  fmt = fmt?.toString()||"";
-  if(args.length) {
-    fmt = fmt.replace(re, function(match, escaped, ptn, flag) {
-      var arg = args.shift();
-      switch(flag) {
-        case 's':
-          arg = '' + arg;
-          break;
-        case 'd':
-          arg = Number(arg);
-          break;
-        case 'j':
-          arg = JSON.stringify(arg);
-          break;
-      }
-      if(!escaped) {
-        return arg; 
-      }
-      args.unshift(arg);
-      return match;
-    })
-  }
-  if(args.length) {
-    fmt += ' ' + args.join(' ');
-  }
-  fmt = fmt.replace(/%{2,2}/g, '%');
-  return '' + fmt;
-}
-const write = (...args) => term.write(format(...args).replace(/\n/g,'\r\n'))
-const writeln = (...args) => term.writeln(format(...args).replace(/\n/g,'\r\n'))
-
-const pressed = {}
-const isDown = key =>{
-  if(pressed[key]) return true;
-  return false;
-}
-//.replace(/\n/g,'\r\n')
-let bracketComplete = true;
-let multiLine = false;
-let curCode = '';
-const willBreakLine = ()=>{
-  const openP = []
-  let done = true;
-  let inString = false
-  for(let i=0;i<curCode.length;i++){
-    switch(curCode[i]){
-      case '(':
-        if(inString) break;
-        openP.push(0)
-        break;
-      case '{':
-        if(inString) break;
-        openP.push(1)
-        break;
-      case '[':
-        if(inString) break;
-        openP.push(2)
-        break;
-      case ')':
-        if(inString) break;
-        if(openP[openP.length-1]===0) openP.pop()
-        else return false
-        break;
-      case '}':
-        if(inString) break;
-        if(openP[openP.length-1]===1) openP.pop()
-        else return false
-        break;
-      case ']':
-        if(inString) break;
-        if(openP[openP.length-1]===2) openP.pop()
-        else return false
-        break;
-      case "'":
-        if(inString && openP[openP.length-1]===3){
-          inString = false
-          openP.pop()
-        }else if (curCode[i]==='"'&&curCode[i+1]==='"'&&curCode[i+2]==='"') {
-          
-        }else{
-          inString = true
-          openP.push(3)
-        }
-        break;
-      case '"':
-        if(inString && openP[openP.length-1]===4){
-          inString = false
-          openP.pop()
-        }else{
-          inString = true
-          openP.push(4)
-        }
-        break; 
-      default:
-        break;
-    }
-  }
-  if(openP.length===0){
-    if(curCode[curCode.length-1]===':')return true;
-    return false;
-  }
-  return true;
+function sleep(s) {
+  return new Promise((resolve) => setTimeout(resolve, s));
 }
 
-term.attachCustomKeyEventHandler(async e=>{
-  if(!ready)return null;
-  if(e.type==='keyup')pressed[e.key]=false
-  else if(e.type==='keydown') pressed[e.key]=true
-})
-term.onKey(async e=>{
-  if(!typeListening){
-    if(e.domEvent.key==='Backspace') term.write('\x1b[D \x1b[D')
-    else if(e.key==='\r') term.write('\r\n')
-    else term.write(e.key);
-    return 0;
-  }
-  if(e.key==='\r'){   //enter is pressed
-    termHistory[0] = currentLine
-    curCode += currentLine
-    currentLine = ''
-    currentHistoryLine = 0
-    termHistory.unshift('')
-    if(isDown('Shift') || willBreakLine()){
-      //multi-line script
-      multiLine = true;
-      curCode += '\n'
-      term.write('\n\r... ')
-    }else{
-      if(multiLine===true){
-        //when multi-line code is completed
-        //this looks dirty tho
-        if(curCode[curCode.length-1]==='\n')multiLine = false;
-        else {
-          curCode += '\n'
-          term.write('\r\n... ')
-          return 0;
-        }
-      }
-      term.write('\r\n')
-      if(curCode.length===0){
-        term.write('>>> ')
-        return 0;
-      }
-      
-      //execute Python🐍🐍🐍🐍🐍🐍🐍🐍🐍🐍
-      typeListening = false
-      await pyodide.runPythonAsync(curCode).then(v=>{
-        if(typeof v === 'string') write(`'${v.replace(/\n/g,'\\n')}'`)
-        else write(v)
-      }).catch(err=>{
-        write(err)
-      }).then(()=>{
-        typeListening = true
-        curCode = ''
-        term.write('\r\n>>> ')
-      })
-      
-    }
-    return 0;
-  }else if(e.domEvent.key==='Backspace'){
-    if(term.buffer.active.cursorX>4){
-      if(currentHistoryLine!==0){
-        termHistory[0] = currentLine
-      }
-      currentLine = currentLine.substring(0,currentLine.length-1);
-      termHistory[0] = currentLine
-      term.write('\x1b[D \x1b[D')
-    }
-    return 0;
-  }
-  switch(e.domEvent.key){
-    case 'ArrowRight':
-      //right arrow
-      //term.write('\x1b[C')
-      break;
-    case 'ArrowLeft':
-      //term.write('\x1b[D')
-      break;
-    case 'ArrowUp':
-      //term.write('\x1b[D')
-      if(currentHistoryLine<termHistory.length){
-        currentHistoryLine++;
-        term.write('\x1b[5G\x1b[K')
-        term.write(termHistory[currentHistoryLine])
-        currentLine = termHistory[currentHistoryLine]
-      }
-      break;
-    case 'ArrowDown':
-      if(currentHistoryLine>0){
-        currentHistoryLine--
-        term.write('\x1b[5G\x1b[K')
-        term.write(termHistory[currentHistoryLine])
-        currentLine = termHistory[currentHistoryLine]
-        
-      }
-      //term.write('\x1b[D')
-      
-      break;
-    case 'Tab':
-      term.write('    ');
-      currentLine += '    '
-      termHistory[0] = currentLine
-      break;
-    default:
-      term.write(e.key);
-      currentLine += e.key
-      termHistory[0] = currentLine
-      break;
-  }
-})
+async function main() {
+  const urlParams = new URLSearchParams(window.location.search);
+  let modules = urlParams.get('modules');
+  if(modules==null){modules=''}
+  modules = modules.split(',')
+  const { loadPyodide } = await import("https://cdn.jsdelivr.net/pyodide/dev/full/pyodide.mjs");
 
-
-const main = async () => {
-  writeln(`
-\x1b[96m          .?77777777777777$.            
-\x1b[96m          777..777777777777$+           
-\x1b[96m         .77    7777777777$$$           
-\x1b[96m         .777 .7777777777$$$$           
-\x1b[96m         .7777777777777$$$$$$           
-\x1b[96m         ..........:77$$$$$$$           
-\x1b[96m  .77777777777777777$$$$$$$$$.\x1b[93m=======.  
-\x1b[96m 777777777777777777$$$$$$$$$$.\x1b[93m========  
-\x1b[96m7777777777777777$$$$$$$$$$$$$.\x1b[93m========= 
-\x1b[96m77777777777777$$$$$$$$$$$$$$$.\x1b[93m========= 
-\x1b[96m777777777777$$$$$$$$$$$$$$$$ :\x1b[93m========+.
-\x1b[96m77777777777$$$$$$$$$$$$$$+.\x1b[93m.=========++~
-\x1b[96m777777777$$..\x1b[93m~=====================+++++
-\x1b[96m77777777$~.\x1b[93m~~~~=~=================+++++.
-\x1b[96m777777$$$.\x1b[93m~~~===================+++++++.
-\x1b[96m77777$$$$.\x1b[93m~~==================++++++++: 
-\x1b[96m 7$$$$$$$.\x1b[93m==================++++++++++. 
-\x1b[96m .,$$$$$$.\x1b[93m================++++++++++~.  
-         .=========~.........           
-         .=============++++++           
-         .===========+++..+++           
-         .==========+++.  .++           
-          ,=======++++++,,++,           
-          ..=====+++++++++=.            
-                ..~+=...                     
-                \x1b[0m
-Preparing python interpreter. Please wait...\n`)
-  pyodide = await loadPyodide({
-    indexURL : "https://cdn.jsdelivr.net/pyodide/dev/full/",
+  let term;
+  globalThis.pyodide = await loadPyodide({
+    stdin: () => {
+      let result = prompt();
+      echo(result);
+      return result;
+    },
   });
-  pyodide.globals.set('so', {
-    write: write,
-    writeln: writeln
-  })
-  pyodide.globals.set('si', {
-    write: write,
-    readline: async (charNum) =>new Promise(r=>{
-      charNum ?? (charNum = term.cols)
-      writeln()
-      const b = term.buffer.active
-      setTimeout(()=>term.onLineFeed(()=>{
-        r(b.getLine(b.viewportY+b.cursorY-1).translateToString(true,0,charNum))
-        return term
-      }),400)
-    })
-     
-  })
-  pyodide.globals.set('input', async (msg)=>new Promise(r=>{
-      write(msg)
-      const b = term.buffer.active
-      setTimeout(()=>term.onLineFeed(()=>{
-        r(b.getLine(b.viewportY+b.cursorY-1).translateToString(true,0))
-        return term
-      }),400)
-    }))
-  pyodide.globals.set('sleep',(t)=>new Promise(r=>setTimeout(r,t*1000)))
-
+  let namespace = pyodide.globals.get("dict")();
   pyodide.runPython(
-`
-import sys
-import time
-time.sleep = sleep
-sys.stdout = so
-sys.stdin = si
-print(sys.version)
-print('Type "help", "copyright", "credits" or "license" for more information.')
-`)
-  write("\nPlease use 'await' before writing functions such as 'sleep' or 'input'.\n\n>>> ")
-  ready=true;
+    `
+      import sys
+      from pyodide.ffi import to_js
+      from pyodide.console import PyodideConsole, repr_shorten, BANNER
+      import __main__
+      pyconsole = PyodideConsole(__main__.__dict__)
+      import builtins
+      async def await_fut(fut):
+        res = await fut
+        if res is not None:
+          builtins._ = res
+        return to_js([res], depth=1)
+      def clear_console():
+        pyconsole.buffer = []
+  `,
+    { globals: namespace },
+  );
+  await pyodide.loadPackage('micropip');
+  const micropip = pyodide.pyimport('micropip')
+  if (modules != '') {for (let i=0; i < modules.length; i++) {
+    await micropip.install(modules[i])
+  }}
+  let repr_shorten = namespace.get("repr_shorten");
+  let banner = namespace.get("BANNER");
+  let await_fut = namespace.get("await_fut");
+  let pyconsole = namespace.get("pyconsole");
+  let clear_console = namespace.get("clear_console");
+  const echo = (msg, ...opts) =>
+    term.echo(
+      msg
+        .replaceAll("]]", "&rsqb;&rsqb;")
+        .replaceAll("[[", "&lsqb;&lsqb;"),
+      ...opts,
+    );
+  namespace.destroy();
+
+  let ps1 = ">>> ",
+    ps2 = "... ";
+
+  async function lock() {
+    let resolve;
+    let ready = term.ready;
+    term.ready = new Promise((res) => (resolve = res));
+    await ready;
+    return resolve;
+  }
+
+  async function interpreter(command) {
+    let unlock = await lock();
+    term.pause();
+    // multiline should be split (useful when pasting)
+    for (const c of command.split("\n")) {
+      const escaped = c.replaceAll(/\u00a0/g, " ");
+      let fut = pyconsole.push(escaped);
+      term.set_prompt(fut.syntax_check === "incomplete" ? ps2 : ps1);
+      switch (fut.syntax_check) {
+        case "syntax-error":
+          term.error(fut.formatted_error.trimEnd());
+          continue;
+        case "incomplete":
+          continue;
+        case "complete":
+          break;
+        default:
+          throw new Error(`Unexpected type ${ty}`);
+      }
+      // In JavaScript, await automatically also awaits any results of
+      // awaits, so if an async function returns a future, it will await
+      // the inner future too. This is not what we want so we
+      // temporarily put it into a list to protect it.
+      let wrapped = await_fut(fut);
+      // complete case, get result / error and print it.
+      try {
+        let [value] = await wrapped;
+        if (value !== undefined) {
+          echo(
+            repr_shorten.callKwargs(value, {
+              separator: "\n<long output truncated>\n",
+            }),
+          );
+        }
+        if (value instanceof pyodide.ffi.PyProxy) {
+          value.destroy();
+        }
+      } catch (e) {
+        if (e.constructor.name === "PythonError") {
+          const message = fut.formatted_error || e.message;
+          term.error(message.trimEnd());
+        } else {
+          throw e;
+        }
+      } finally {
+        fut.destroy();
+        wrapped.destroy();
+      }
+    }
+    term.resume();
+    await sleep(10);
+    unlock();
+  }
+
+  term = $("body").terminal(interpreter, {
+    greetings: banner,
+    prompt: ps1,
+    completionEscape: false,
+    completion: function (command, callback) {
+      callback(pyconsole.complete(command).toJs()[0]);
+    },
+    keymap: {
+      "CTRL+C": async function (event, original) {
+        clear_console();
+        term.enter();
+        echo("KeyboardInterrupt");
+        term.set_command("");
+        term.set_prompt(ps1);
+      },
+      TAB: (event, original) => {
+        const command = term.before_cursor();
+        // Disable completion for whitespaces.
+        if (command.trim() === "") {
+          term.insert("\t");
+          return false;
+        }
+        return original(event);
+      },
+    },
+  });
+  window.term = term;
+  pyconsole.stdout_callback = (s) => echo(s, { newline: false });
+  pyconsole.stderr_callback = (s) => {
+    term.error(s.trimEnd());
+  };
+  term.ready = Promise.resolve();
+
+  const searchParams = new URLSearchParams(window.location.search);
 }
-main()
-//document.addEventListener('DOMContentLoaded',()=>main())
-//setTimeout(main, 2000)
+window.console_ready = main();
