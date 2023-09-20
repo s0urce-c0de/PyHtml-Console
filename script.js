@@ -22,7 +22,7 @@ async function main() {
     `
       import sys
       from pyodide.ffi import to_js
-      from pyodide.console import PyodideConsole, repr_shorten, BANNER
+      from pyodide.console import PyodideConsole, BANNER
       import __main__
       pyconsole = PyodideConsole(__main__.__dict__)
       import builtins
@@ -41,7 +41,6 @@ async function main() {
   if (modules != '') {for (let i=0; i < modules.length; i++) {
     await micropip.install(modules[i])
   }}
-  let repr_shorten = namespace.get("repr_shorten");
   let banner = namespace.get("BANNER");
   let await_fut = namespace.get("await_fut");
   let pyconsole = namespace.get("pyconsole");
@@ -94,11 +93,7 @@ async function main() {
       try {
         let [value] = await wrapped;
         if (value !== undefined) {
-          echo(
-            repr_shorten.callKwargs(value, {
-              separator: "\n<long output truncated>\n",
-            }),
-          );
+          echo(value);
         }
         if (value instanceof pyodide.ffi.PyProxy) {
           value.destroy();
